@@ -158,15 +158,36 @@ def _write_failure(exc: OSError) -> Exception:
     return DiskFull(exc) if _is_disk_full(exc) else WriteFailure(exc)
 
 
-def _copy_to_temp(source: str, temp: str, cancel: threading.Event) -> str:
-    """Stream source into temp, return the digest of exactly what was read.
+class _VerifyFailure(Exception):
+    """The copy could not be read back to be checked."""
+
+
+def _read_back(handle) -> str:
+    """Hash what the destination now holds, through the handle that wrote it.
+
+    Closing a freshly written file and opening it again makes antivirus scan
+    it first, which measured about 15 ms per file here: half an hour on a
+    100,000-file folder. Reading back through the same handle returns the
+    same bytes from Windows without that wait.
+    """
+    handle.seek(0)
+    digest = hashlib.blake2b(digest_size=32)
+    while True:
+        chunk = handle.read(CHUNK_SIZE)
+        if not chunk:
+            return digest.hexdigest()
+        digest.update(chunk)
+
+
+def _copy_to_temp(source: str, temp: str, cancel: threading.Event) -> tuple[str, str]:
+    """Stream source into temp. Returns (digest of what was read, digest read back).
 
     Reading problems become ReadFailure and writing problems WriteFailure or
     DiskFull, so the caller can tell a bad source from a bad destination.
     """
     digest = hashlib.blake2b(digest_size=32)
     try:
-        out = open(temp, "wb")
+        out = open(temp, "w+b")
     except OSError as exc:
         raise _write_failure(exc) from exc
     with out:
@@ -193,7 +214,11 @@ def _copy_to_temp(source: str, temp: str, cancel: threading.Event) -> str:
             os.fsync(out.fileno())
         except OSError as exc:
             raise _write_failure(exc) from exc
-    return digest.hexdigest()
+        try:
+            written = _read_back(out)
+        except OSError as exc:
+            raise _VerifyFailure(exc) from exc
+    return digest.hexdigest(), written
 
 
 def _remove_quietly(path: str) -> None:
@@ -315,7 +340,7 @@ def _copy_one(source_file: str, dest_file: str, cancel: threading.Event) -> str 
         if cancel.is_set():
             return "dibatalkan"
         try:
-            expected = _copy_to_temp(source_file, temp, cancel)
+            expected, actual = _copy_to_temp(source_file, temp, cancel)
         except _Cancelled:
             _remove_quietly(temp)
             return "dibatalkan"
@@ -333,15 +358,15 @@ def _copy_one(source_file: str, dest_file: str, cancel: threading.Event) -> str 
         except WriteFailure as exc:
             _remove_quietly(temp)
             return "tidak bisa ditulis di tujuan: " + friendly_reason(exc.__cause__ or exc)
+        except _VerifyFailure as exc:
+            _remove_quietly(temp)
+            return "salinan tidak bisa dibaca ulang untuk diperiksa: " + friendly_reason(
+                exc.__cause__ or exc
+            )
         except BaseException:
             _remove_quietly(temp)
             raise
 
-        try:
-            actual = _hash_file(temp)
-        except OSError as exc:
-            _remove_quietly(temp)
-            return "salinan tidak bisa dibaca ulang untuk diperiksa: " + friendly_reason(exc)
         if actual != expected:
             _remove_quietly(temp)
             if attempt + 1 < READ_ATTEMPTS:

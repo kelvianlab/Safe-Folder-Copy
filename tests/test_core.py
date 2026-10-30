@@ -176,12 +176,7 @@ def test_a_passing_read_error_is_retried(source, tmp_path, monkeypatch, fast_ret
 
 
 def test_a_copy_that_does_not_verify_is_never_given_its_real_name(source, tmp_path, monkeypatch):
-    real = core._hash_file
-
-    def lying(path):
-        return "0" * 64 if path.endswith(TMP_SUFFIX) else real(path)
-
-    monkeypatch.setattr(core, "_hash_file", lying)
+    monkeypatch.setattr(core, "_read_back", lambda handle: "0" * 64)
     dest = tmp_path / "salinan"
     result = copy_folder(source, dest)
 
