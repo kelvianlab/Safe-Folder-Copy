@@ -29,11 +29,16 @@ def app(monkeypatch):
 
 
 def _pump(app, seconds=20.0):
+    """Run the event loop until the window itself has shown the result.
+
+    The worker finishing is not enough: the window only notices on its next
+    100 ms poll, and the start button comes back once it has.
+    """
     deadline = time.time() + seconds
     while time.time() < deadline:
         app.update()
-        if not app.busy and app._outcome is not None:
-            app.update()
+        finished = not app.busy and app._outcome is not None
+        if finished and str(app.start_button["state"]) == "normal":
             return
         time.sleep(0.02)
     raise AssertionError("the copy never finished")
