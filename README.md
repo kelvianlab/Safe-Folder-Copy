@@ -99,7 +99,8 @@ every file or folder that could not be read or copied, with the reason.
 
 ### Running from source
 
-Python 3.9 or newer. There are no third-party dependencies.
+Python 3.10 or newer. There are no third-party dependencies. (People using the `.exe` do
+not need Python at all.)
 
 ```bash
 python -m safe_folder_copy

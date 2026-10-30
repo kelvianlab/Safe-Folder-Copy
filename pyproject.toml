@@ -3,7 +3,7 @@ name = "safe-folder-copy"
 version = "1.0.0"
 description = "Copy a folder to another drive without stopping on damaged files, verifying every file and never touching the original."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "KelvianLab" }]
 dependencies = []
