@@ -1,0 +1,95 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the leading v (e.g. 1.0.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install pyinstaller pytest
+
+      - name: Run the test suite first
+        run: python -m pytest -q
+
+      - name: Build SafeFolderCopy.exe
+        run: >
+          pyinstaller --clean --noconfirm --onefile --windowed
+          --name SafeFolderCopy --paths . packaging/gui_entry.py
+
+      - name: Check the built exe really copies and verifies
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force smoke\source\Sub | Out-Null
+          Set-Content smoke\source\a.txt "hello"
+          [IO.File]::WriteAllBytes("$PWD\smoke\source\Sub\b.bin", [byte[]](1..250))
+          $p = Start-Process -FilePath .\dist\SafeFolderCopy.exe `
+               -ArgumentList '--copy', 'smoke\source', 'smoke\copy' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "exe exited with $($p.ExitCode)" }
+          foreach ($f in 'a.txt', 'Sub\b.bin') {
+            $a = (Get-FileHash "smoke\source\$f").Hash
+            $b = (Get-FileHash "smoke\copy\$f").Hash
+            if ($a -ne $b) { throw "$f differs after copy" }
+          }
+          if (-not (Get-ChildItem smoke\copy -Filter 'Laporan Safe-Folder-Copy*.txt')) { throw "no report written" }
+          Write-Host "exe copied and verified both files and wrote its report"
+
+      - name: Check the window opens and stays open
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath .\dist\SafeFolderCopy.exe -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "SafeFolderCopy.exe closed on its own with code $($p.ExitCode)" }
+          Get-Process SafeFolderCopy -ErrorAction SilentlyContinue | Stop-Process -Force
+          Write-Host "window started and stayed up"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SafeFolderCopy-windows
+          path: dist/SafeFolderCopy.exe
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
+          name: Safe Folder Copy ${{ inputs.version || github.ref_name }}
+          files: dist/SafeFolderCopy.exe
+          body: |
+            ## Download
+
+            ### `SafeFolderCopy.exe` — this is the only file you need
+
+            Download it and double-click it. No installation, no Python, nothing to type.
+            Unduh dan klik dua kali. Tanpa instalasi, tanpa Python, tanpa mengetik perintah.
+
+            The first time, Windows may say **"Windows protected your PC"**. That is because the
+            file is not code-signed, not because anything is wrong with it. Click **More info**,
+            then **Run anyway**. You are only asked once.
+
+            Pertama kali, Windows mungkin menampilkan **"Windows protected your PC"**. Klik
+            **More info**, lalu **Run anyway**. Hanya diminta sekali.
+
+            ---
+
+            `Source code (zip)` and `(tar.gz)` are added by GitHub automatically. They are the
+            program's source files, not the app. You do not need them.
+
+            Built and tested from this exact commit by GitHub Actions: the full test suite ran,
+            then the finished exe copied a sample folder and its output was checked byte for byte.

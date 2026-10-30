@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# PyInstaller output
+build/
+dist/
+*.spec
+
+# Left behind if a copy is interrupted hard enough that cleanup never ran
+*.sfc-tmp
+
+# Reports the tool writes into a destination folder during manual testing
+Laporan Safe-Folder-Copy *.txt
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
